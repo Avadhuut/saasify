@@ -44,6 +44,9 @@ graph TD
 4. **Gateway-Level JWT Guardrails**: Centralized security filters validate tokens and block cross-tenant hijacking attempts.
 5. **Gateway-Level Auto-Suspension**: Instantly blocks API access for `SUSPENDED` tenants returning `402 Payment Required`, with dynamic cache-refill fallbacks.
 6. **Telemetry Resiliency (Kafka DLQ & Retry)**: Consumed telemetry events are automatically retried 4 times with exponential backoff, routing persistent failures to a Dead Letter Queue (DLQ) for monitoring.
+7. **Fault-Tolerant Inter-Service Communication (Resilience4j)**: OpenFeign clients are protected with **Resilience4j Circuit Breaker & Retry** policies with graceful fallbacks (e.g., fallback plan thresholds) to prevent cascading failures if critical services go offline.
+8. **Distributed Context Correlation (MDC Logging)**: Propagates correlation, tenant, and user IDs across thread pools and network hops using custom servlet and reactive filters to ensure uniform, end-to-end log correlation.
+9. **Gateway Token-Bucket Rate Limiting**: Protects downstream services from denial-of-service surges by implementing per-tenant, per-minute rate-limiting directly inside the Gateway via reactive Redis scripts.
 
 ---
 
@@ -163,6 +166,81 @@ Make multiple API calls as the user, then query metrics:
 3. **Get Usage History**:
    * `GET http://localhost:8080/api/billing/usage/acme/history`
    * Queries the database history catalog using the tenant's mapped UUID.
+
+### Step 6: Suspend a Tenant & Verify Auto-Blocking
+1. **Suspend the Tenant**:
+   * Send a `PUT` request to update status:
+     `PUT http://localhost:8080/api/tenants/<tenant-uuid>/status?status=SUSPENDED`
+2. **Verify API Block**:
+   * Try calling `GET http://localhost:8080/api/users` again with headers.
+   * **Expected Response**: The API Gateway immediately blocks the request with `402 Payment Required` and payload:
+     ```json
+     {
+       "error": "Payment Required",
+       "message": "Tenant account is suspended. Please resolve billing issues or upgrade plan."
+     }
+     ```
+3. **Re-activate the Tenant**:
+   * Restore service by sending a `PUT` request:
+     `PUT http://localhost:8080/api/tenants/<tenant-uuid>/status?status=ACTIVE`
+   * Subsequent API requests will instantly succeed again.
+
+---
+
+## 🛡️ Fault Tolerance & Resiliency Walkthrough
+
+The project implements defensive programming patterns to remain resilient during infrastructure degradation:
+
+### 1. Kafka Telemetry Retry & DLQ (Billing Service)
+* **What it does**: If the Billing Service loses its connection to MySQL or Redis while processing usage counters, it will fail to resolve the tenant's plan. Rather than dropping the telemetry silently, it throws an exception to trigger the Kafka retry loop.
+* **How to Verify**:
+  1. Temporarily stop the MySQL container:
+     ```bash
+     docker stop saasify-mysql
+     ```
+  2. Make an API call through the gateway. The gateway logs the request and publishes `"acme"` to the `usage.recorded` Kafka topic.
+  3. Inspect the **Billing Service console logs**. You will see the consumer attempting to process the message 4 times (1 initial + 3 retries) with exponential backoff delays (2s -> 4s -> 8s).
+  4. Once all 4 attempts fail, the message is routed to the Dead Letter Queue (`usage.recorded.DLQ`), printing a `CRITICAL` log warning.
+  5. Restart the database: `docker start saasify-mysql`.
+
+### 2. Resilience4j Circuit Breaker & Retry (User Service)
+* **What it does**: When registering a new user, `user-service` makes a Feign request to `tenant-service` to check the database limits. If `tenant-service` is down, a Resilience4j Circuit Breaker intercepts the call and falls back gracefully to default `FREE` tier rules, preventing a generic `500 Server Error`.
+* **How to Verify**:
+  1. Stop the `tenant-service` process.
+  2. Send a request to register a new user:
+     `POST http://localhost:8080/api/auth/register` (with headers and registration body).
+  3. Inspect the **User Service logs**. You will see:
+     ```text
+     Warning: tenant-service is down. Falling back to default plan limits.
+     ```
+  4. The request completes successfully using the safe fallback thresholds rather than breaking the user registration flow.
+
+---
+
+## 📊 Observability & Monitoring Dashboards
+
+The infrastructure includes complete distributed tracing and metrics aggregation configured out-of-the-box. After making some API calls, you can inspect the telemetry across these dashboards:
+
+### 1. Distributed Tracing (Zipkin)
+* **Dashboard URL**: [http://localhost:9411/zipkin/](http://localhost:9411/zipkin/)
+* **How to Verify**:
+  1. Click **Run Query** in the top right to view trace logs for recent HTTP transactions.
+  2. Click on the cascade timeline for `GET /api/users` to see tracing spans propagated dynamically from the `api-gateway` down to `user-service` under the same W3C `traceId`.
+  3. Click any span, look under **Tags**, and verify that the custom attribute `tenant.id` matches the active tenant (e.g., `acme`).
+  4. Search `tenant.id=acme` in the search bar to filter tracing profiles by tenant context.
+
+### 2. Metrics Collection (Prometheus)
+* **Dashboard URL**: [http://localhost:9090/](http://localhost:9090/)
+* **How to Verify**:
+  1. Navigate to **Status > Targets** to verify all microservices are registered as scraped endpoints.
+  2. Go to the **Graph** tab, execute a query for the custom metric `tenant_api_requests_total`, and verify it shows data points tagged with labels like `{tenant_id="acme", status="200"}`.
+
+### 3. Monitoring & Dashboards (Grafana)
+* **Dashboard URL**: [http://localhost:3000/](http://localhost:3000/) *(Bypasses login automatically as Admin)*
+* **How to Verify**:
+  1. Add a **Prometheus** datasource pointing to URL `http://prometheus:9090`.
+  2. Create metrics panels using PromQL queries matching template parameters like `sum(rate(tenant_api_requests_total{tenant_id="$tenant"}[1m]))`.
+  3. Use the `$tenant` dashboard variables dropdown to filter metrics panels by specific tenant subdomains dynamically.
 
 ---
 

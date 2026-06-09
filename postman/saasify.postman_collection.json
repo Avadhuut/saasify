@@ -1,0 +1,619 @@
+{
+	"info": {
+		"_postman_id": "00a12c8b-209e-4a6c-9411-e6a372d8291a",
+		"name": "SaaSify Platform API E2E",
+		"description": "End-to-End collection to test Tenant Onboarding, Scoped Authentication, User Management, and Billing Telemetry through the API Gateway.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Tenant Onboarding & Management (Tenant Service)",
+			"item": [
+				{
+					"name": "Onboard Tenant (Acme)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.id) {",
+									"    pm.globals.set(\"saasify_tenant_id\", jsonData.id);",
+									"    console.log(\"Saved Tenant ID to saasify_tenant_id global variable!\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Acme Corp\",\n  \"subdomain\": \"acme\",\n  \"plan\": \"FREE\",\n  \"contactEmail\": \"admin@acme.com\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8080/api/tenants",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"tenants"
+							]
+						},
+						"description": "Onboards Acme Corp, provisions a new SQL schema 'tenant_acme', runs Flyway migrations, and registers the connection pool dynamically."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Tenant By Subdomain",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8080/api/tenants/acme",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"tenants",
+								"acme"
+							]
+						},
+						"description": "Fetches tenant metadata and plan details by the subdomain or tenant UUID."
+					},
+					"response": []
+				},
+				{
+					"name": "List All Tenants (Dashboard)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8080/api/tenants",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"tenants"
+							]
+						},
+						"description": "Lists all tenants registered in the platform database for admin console display."
+					},
+					"response": []
+				},
+				{
+					"name": "Upgrade Tenant Plan",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8080/api/tenants/{{saasify_tenant_id}}/plan?plan=PRO",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"tenants",
+								"{{saasify_tenant_id}}",
+								"plan"
+							],
+							"query": [
+								{
+									"key": "plan",
+									"value": "PRO"
+								}
+							]
+						},
+						"description": "Upgrades the subscription plan of a tenant dynamically, automatically updating the active Redis metadata cache."
+					},
+					"response": []
+				},
+				{
+					"name": "Suspend Tenant (Triggers Eviction)",
+					"request": {
+						"method": "PUT",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8080/api/tenants/{{saasify_tenant_id}}/status?status=SUSPENDED",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"tenants",
+								"{{saasify_tenant_id}}",
+								"status"
+							],
+							"query": [
+								{
+									"key": "status",
+									"value": "SUSPENDED"
+								}
+							]
+						},
+						"description": "Suspends a tenant, publishing a suspension event to Kafka which triggers the Auth Service to drop all active sessions and evict user tokens from Redis."
+					},
+					"response": []
+				},
+				{
+					"name": "Soft Delete Tenant",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "http://localhost:8080/api/tenants/{{saasify_tenant_id}}",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"tenants",
+								"{{saasify_tenant_id}}"
+							]
+						},
+						"description": "Soft deletes a tenant by changing status to DELETED (preserving database tables but preventing new connections)."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Authentication (Auth Service)",
+			"item": [
+				{
+					"name": "Register User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Tenant-ID",
+								"value": "acme",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"developer@acme.com\",\n  \"password\": \"AcmePass123!\",\n  \"role\": \"ADMIN\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8080/api/auth/register",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"auth",
+								"register"
+							]
+						},
+						"description": "Registers a new user inside the isolated 'tenant_acme' database schema."
+					},
+					"response": []
+				},
+				{
+					"name": "Login User (Obtain JWT)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.accessToken) {",
+									"    pm.globals.set(\"saasify_jwt\", jsonData.accessToken);",
+									"    console.log(\"Saved JWT to saasify_jwt global variable!\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Tenant-ID",
+								"value": "acme",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"developer@acme.com\",\n  \"password\": \"AcmePass123!\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8080/api/auth/login",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						},
+						"description": "Authenticates user against acme's isolated schema and issues a 15-minute validity JWT."
+					},
+					"response": []
+				},
+				{
+					"name": "Logout User",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Tenant-ID",
+								"value": "acme",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{saasify_jwt}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8080/api/auth/logout",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"auth",
+								"logout"
+							]
+						},
+						"description": "Logs out user and purges the active Redis refresh token session."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. User Administration (User Service)",
+			"item": [
+				{
+					"name": "Get All Users",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Tenant-ID",
+								"value": "acme",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{saasify_jwt}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8080/api/users",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"users"
+							]
+						},
+						"description": "Retrieves all users registered inside the active tenant's schema."
+					},
+					"response": []
+				},
+				{
+					"name": "Create User (Admin Action)",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = pm.response.json();",
+									"if (jsonData.id) {",
+									"    pm.globals.set(\"saasify_user_id\", jsonData.id);",
+									"    console.log(\"Saved User ID to saasify_user_id global variable!\");",
+									"}"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-Tenant-ID",
+								"value": "acme",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{saasify_jwt}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"member1@acme.com\",\n  \"password\": \"AcmeMember123!\",\n  \"role\": \"MEMBER\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8080/api/users",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"users"
+							]
+						},
+						"description": "Creates a new user under user-service management, checking quotas first."
+					},
+					"response": []
+				},
+				{
+					"name": "Get User By ID",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Tenant-ID",
+								"value": "acme",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{saasify_jwt}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8080/api/users/{{saasify_user_id}}",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"users",
+								"{{saasify_user_id}}"
+							]
+						},
+						"description": "Fetches a single user details inside active tenant's schema."
+					},
+					"response": []
+				},
+				{
+					"name": "Update User",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "X-Tenant-ID",
+								"value": "acme",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{saasify_jwt}}",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"role\": \"VIEWER\",\n  \"isActive\": true\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "http://localhost:8080/api/users/{{saasify_user_id}}",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"users",
+								"{{saasify_user_id}}"
+							]
+						},
+						"description": "Updates user metadata inside active tenant's schema."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete User",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "X-Tenant-ID",
+								"value": "acme",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{saasify_jwt}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8080/api/users/{{saasify_user_id}}",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"users",
+								"{{saasify_user_id}}"
+							]
+						},
+						"description": "Removes a user row from active tenant's schema."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Billing & Metrics (Billing Service)",
+			"item": [
+				{
+					"name": "Get Current Billing Usage",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Tenant-ID",
+								"value": "acme",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{saasify_jwt}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8080/api/billing/usage/acme",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"billing",
+								"usage",
+								"acme"
+							]
+						},
+						"description": "Queries the live daily usage metrics from Redis via the Gateway router."
+					},
+					"response": []
+				},
+				{
+					"name": "Get Historical Billing Usage",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-Tenant-ID",
+								"value": "acme",
+								"type": "text"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{saasify_jwt}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "http://localhost:8080/api/billing/usage/acme/history",
+							"protocol": "http",
+							"host": [
+								"localhost"
+							],
+							"port": "8080",
+							"path": [
+								"api",
+								"billing",
+								"usage",
+								"acme",
+								"history"
+							]
+						},
+						"description": "Retrieves the historical daily archived stats from the master SQL database database table."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "5. Gateway Rate Limiting Check",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "X-Tenant-ID",
+						"value": "acme",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer {{saasify_jwt}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "http://localhost:8080/api/billing/usage/acme",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "8080",
+					"path": [
+						"api",
+						"billing",
+						"usage",
+						"acme"
+					]
+				},
+				"description": "Click 'Send' rapidly 11+ times within 1 minute. The API Gateway will trigger a HTTP 429 Too Many Requests response code."
+			},
+			"response": []
+		}
+	]
+}

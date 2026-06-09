@@ -1,0 +1,10 @@
+C:\Users\Admin\Desktop\saasify\billing-service\src\main\java\com\saasify\billing\BillingServiceApplication.java
+C:\Users\Admin\Desktop\saasify\billing-service\src\main\java\com\saasify\billing\controller\BillingController.java
+C:\Users\Admin\Desktop\saasify\billing-service\src\main\java\com\saasify\billing\entity\TenantUsageHistory.java
+C:\Users\Admin\Desktop\saasify\billing-service\src\main\java\com\saasify\billing\exception\ErrorResponse.java
+C:\Users\Admin\Desktop\saasify\billing-service\src\main\java\com\saasify\billing\exception\GlobalExceptionHandler.java
+C:\Users\Admin\Desktop\saasify\billing-service\src\main\java\com\saasify\billing\filter\MdcPropagationFilter.java
+C:\Users\Admin\Desktop\saasify\billing-service\src\main\java\com\saasify\billing\kafka\UsageEventConsumer.java
+C:\Users\Admin\Desktop\saasify\billing-service\src\main\java\com\saasify\billing\metrics\UsageMetrics.java
+C:\Users\Admin\Desktop\saasify\billing-service\src\main\java\com\saasify\billing\repository\UsageHistoryRepository.java
+C:\Users\Admin\Desktop\saasify\billing-service\src\main\java\com\saasify\billing\service\UsageArchiveScheduler.java

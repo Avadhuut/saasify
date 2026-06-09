@@ -1,0 +1,16 @@
+# Target folder (compiled bytecode)
+**/target/
+**/*.class
+
+# IDE files
+.idea/
+*.iml
+*.iws
+.vscode/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log

@@ -1,3 +1,0 @@
-com\saasify\gateway\filter\ObservabilityFilterTest.class
-com\saasify\gateway\filter\QuotaCheckFilterTest.class
-com\saasify\gateway\filter\RateLimitFilterTest.class

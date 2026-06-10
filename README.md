@@ -1,4 +1,4 @@
-# Saasify: Multi-Tenant Schema-Isolated Microservices Framework
+# SaaSify — Multi-Tenant SaaS Platform with Schema Isolation
 
 Saasify is a production-grade, highly scalable SaaS (Software-as-a-Service) boilerplate framework built with **Spring Boot**, **Spring Cloud**, **Apache Kafka**, **Redis**, and **MySQL**. It implements a **Schema-per-Tenant** architecture, providing absolute data isolation between different customer accounts (tenants) while utilizing shared computing resources.
 

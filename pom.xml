@@ -17,7 +17,7 @@
     <packaging>pom</packaging>
 
     <name>saasify-parent</name>
-    <description>SaaSify Production-grade Multi-Tenant SaaS platform</description>
+    <description>SaaSify — Multi-Tenant SaaS Platform with Schema Isolation</description>
 
     <properties>
         <java.version>17</java.version>

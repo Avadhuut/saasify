@@ -47,6 +47,8 @@ graph TD
 7. **Fault-Tolerant Inter-Service Communication (Resilience4j)**: OpenFeign clients are protected with **Resilience4j Circuit Breaker & Retry** policies with graceful fallbacks (e.g., fallback plan thresholds) to prevent cascading failures if critical services go offline.
 8. **Distributed Context Correlation (MDC Logging)**: Propagates correlation, tenant, and user IDs across thread pools and network hops using custom servlet and reactive filters to ensure uniform, end-to-end log correlation.
 9. **Gateway Token-Bucket Rate Limiting**: Protects downstream services from denial-of-service surges by implementing per-tenant, per-minute rate-limiting directly inside the Gateway via reactive Redis scripts.
+10. **Automated CI/CD Pipeline (GitHub Actions)**: Integrated workflow covering maven builds, unit testing, JaCoCo threshold verification, Docker image generation, and E2E Postman integration verification using Newman.
+11. **Schema Migration Isolation**: Divides database migrations into administrative master migrations (run on startup) and dynamic tenant migrations (run programmatically during onboarding via isolated templates).
 
 ---
 
@@ -241,6 +243,58 @@ The infrastructure includes complete distributed tracing and metrics aggregation
   1. Add a **Prometheus** datasource pointing to URL `http://prometheus:9090`.
   2. Create metrics panels using PromQL queries matching template parameters like `sum(rate(tenant_api_requests_total{tenant_id="$tenant"}[1m]))`.
   3. Use the `$tenant` dashboard variables dropdown to filter metrics panels by specific tenant subdomains dynamically.
+
+---
+
+## 🗄️ Schema Migration Isolation
+
+SaaSify implements a strict **Schema Migration Isolation** model using Flyway, separating tenant-specific structures from administrative master metadata database tables.
+
+### 1. Master Schema Migrations
+- **Scope**: Platform metadata database (`saasify_master`) containing tenant lists, billing details, usage history catalog, and transactional outbox events.
+- **Trigger**: Automatic on startup. Bootstraps the management environment.
+- **Location**: `src/main/resources/db/migration/` (inside `tenant-service`).
+
+### 2. Tenant Schema Migrations (Dynamic Sandbox)
+- **Scope**: Private tenant schemas (e.g. `tenant_acme`) housing user accounts, refresh tokens, and audit logs.
+- **Trigger**: Executed programmatically during dynamic tenant onboarding.
+- **Location**: `src/main/resources/db/template/` (inside `tenant-service`).
+- **Mechanism**: On registering a new tenant, the `SchemaProvisioningService` dynamically generates the schema in MySQL, configures a standalone Flyway migration runner targeting the new schema, and runs `flyway.migrate()` using the template:
+  ```java
+  Flyway flyway = Flyway.configure()
+          .dataSource(tenantDbUrl, dbUsername, dbPassword)
+          .locations("classpath:db/template")
+          .schemas(schemaName)
+          .load();
+  flyway.migrate();
+  ```
+
+This separation demonstrates:
+- **Flyway expertise** in advanced runtime programmatic configuration.
+- **Enterprise SaaS architecture** by isolating DDL changes and reducing risks of metadata contamination.
+- **Safe tenant provisioning** without microservice downtime or server restarts.
+
+---
+
+## 🔄 CI/CD Automation Pipeline
+
+The project includes a fully automated CI/CD pipeline configured with **GitHub Actions** (`.github/workflows/ci.yml`).
+
+### Pipeline Stages & Workflow:
+1. **Compilation & Unit Tests**: Initiates on check-in to compile the codebase using Maven, caching the local repository to optimize performance, and runs all unit and integration tests.
+   ```bash
+   mvn clean verify -B
+   ```
+2. **JaCoCo Coverage Verification**: Generates code coverage reports and enforces quality gate threshold checks (`jacoco:check`).
+3. **GitHub Container Registry Publish**: Automatically packages each microservice into a Docker container and tags it with both the commit SHA and `:latest`, pushing them directly to GHCR (`ghcr.io`).
+4. **E2E Blackbox Integration Testing**:
+   - Boots up the docker-compose services stack within the runner:
+     ```bash
+     docker compose up -d --wait
+     ```
+   - Automatically installs Postman's Newman CLI tool.
+   - Executes the end-to-end integration tests using Newman against the API Gateway (`saasify.postman_collection.json`).
+   - Dynamically tears down and cleans up the Docker volumes stack after checks complete.
 
 ---
 

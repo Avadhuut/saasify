@@ -344,6 +344,58 @@ public class OutboxPublisherScheduler {
                  └─── Publish Failure ──> Transaction Rollback -> processed=false [Pending Retry]
 ```
 
+### 3. Feign Tenant Context Propagation
+To preserve multi-tenancy context across service boundaries, SaaSify implements transparent header propagation for inter-service communication. When `user-service` makes a synchronous declarative OpenFeign client call to `tenant-service`, it must forward the active `X-Tenant-ID` header.
+
+This is managed by `FeignConfig` through a dedicated `RequestInterceptor` bean:
+
+```java
+package com.saasify.user.config;
+
+import feign.RequestInterceptor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+@Configuration
+public class FeignConfig {
+
+    private static final String TENANT_HEADER = "X-Tenant-ID";
+
+    /**
+     * RequestInterceptor bean that copies the tenant context header from the incoming request's ThreadLocal context
+     * and injects it into the outgoing Feign request template headers.
+     */
+    @Bean
+    public RequestInterceptor tenantHeaderInterceptor() {
+        return requestTemplate -> {
+            // [ANNOTATION] Extract tenant identifier bound to the active request's ThreadLocal context
+            String currentTenant = TenantContext.getCurrentTenant();
+            if (currentTenant != null && !currentTenant.trim().isEmpty()) {
+                // [ANNOTATION] Inject X-Tenant-ID header dynamically into the outgoing request's template
+                requestTemplate.header(TENANT_HEADER, currentTenant);
+            }
+        };
+    }
+}
+```
+
+#### Feign Context Propagation Lifecycle Trace
+```
+Incoming HTTP Request ---> TenantInterceptor ---> Binds X-Tenant-ID to TenantContext (ThreadLocal)
+                                                        │
+                                                        ▼
+                                                  UserService (Executes logic)
+                                                        │
+                                                        ▼ (Feign Client Call)
+                                               Feign RequestInterceptor (Reads ThreadLocal)
+                                                        │
+                                                        ▼ (Injects X-Tenant-ID Header)
+Outgoing Feign Request ---> Tenant Service receives X-Tenant-ID
+                                                        │
+                                                        ▼ (Request completes)
+                                               TenantContext.clear() (Finally block prevents leak)
+```
+
 ---
 
 ## 7. Fault Tolerance & Fallback Matrix

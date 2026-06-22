@@ -39,6 +39,10 @@ SaaSify utilizes a distributed microservices architecture designed to support dy
 
 ### Database Schema Boundaries
 
+> [!NOTE]
+> **MySQL Architecture Nuance (Schema vs. Database)**: 
+> In MySQL, `SCHEMA` and `DATABASE` are exact synonyms (e.g. running `CREATE SCHEMA` is equivalent to `CREATE DATABASE`). Therefore, while SaaSify is logically designed as **Schema-per-Tenant** (segregating metadata namespaces), it physically maps to separate databases (`tenant_acme`, `tenant_globex`) under the hood. In PostgreSQL or SQL Server, these would be separate schemas within a single shared database.
+
 Data is segregated into the **Administrative Master Catalog** (`saasify_master`) and the **Isolated Tenant Sandboxes** (`tenant_{subdomain}`).
 
 ```
@@ -503,6 +507,13 @@ try {
     TenantContext.clear(); // Prevents context leaks
 }
 ```
+
+### Q5: In MySQL, does SaaSify use "Schema-per-Tenant" or "Database-per-Tenant"?
+**They are physically identical in MySQL.** In MySQL, `DATABASE` and `SCHEMA` are exact synonyms (running `CREATE SCHEMA` is equivalent to running `CREATE DATABASE`). Thus, SaaSify's multi-tenancy implementation represents both concepts:
+* **Logically**, it acts as **Schema-per-Tenant** because each tenant's metadata and tables are grouped into isolated namespace contexts.
+* **Physically**, it acts as **Database-per-Tenant** because MySQL registers a separate filesystem database folder for each `tenant_{subdomain}`.
+
+In engines like PostgreSQL, a single database can contain multiple separate schema namespaces. In MySQL, the database engine conflates the two terms, meaning a separate schema *is* a separate database.
 
 ---
 

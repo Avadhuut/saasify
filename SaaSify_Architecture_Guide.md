@@ -61,20 +61,20 @@ Data is segregated into the **Administrative Master Catalog** (`saasify_master`)
 ```
 
 #### A. Master Schema Catalog Tables (`saasify_master`)
-* **`tenants`**: Stores global registration profiles, metadata, subscription levels, and status flags.
-* **`tenant_usage_history`**: Holds daily aggregated API consumption stats for historical reports.
-* **`outbox_log`**: Transactional outbox table to queue Kafka events alongside service database updates.
+* **`tenants`**: Stores global registration profiles, subscription levels, and status flags.
+* **`tenant_usage_history`**: Holds daily aggregated API consumption stats.
+* **`outbox_log`**: Transactional outbox table to queue Kafka events.
 
 #### B. Tenant Schema Catalog Tables (`tenant_{subdomain}`)
-* **`users`**: Isolated user credentials and roles. Email identifiers are unique only within their own schema boundary.
-* **`audit_log`**: Tracks local operations (e.g. `CREATE_USER`) with activity metadata and timestamps.
+* **`users`**: Isolated user credentials. Email is unique only within the scope of its own schema.
+* **`audit_log`**: Tracks local operations (e.g. `CREATE_USER`) with metadata and timestamps.
 
 ---
 
 ## 2. Microservice & Codebase Deep Dive
 
 ### A. eureka-server (Discovery Registry)
-* **Purpose**: Serves as the central server registry. All core microservices register their host/port combinations dynamically on startup.
+* **Purpose**: Serves as the central service registry. All core microservices register their host/port combinations dynamically on startup.
 * **Key Files**:
   * [EurekaServerApplication.java](file:///c:/Users/Admin/Desktop/saasify/eureka-server/src/main/java/com/saasify/eureka/EurekaServerApplication.java): Standard Spring Boot server initialization class annotated with `@EnableEurekaServer`.
 
@@ -118,7 +118,62 @@ Data is segregated into the **Administrative Master Catalog** (`saasify_master`)
 
 ---
 
-## 3. Step-by-Step Scenario Traces
+## 3. Kafka Event Payload Contracts
+
+SaaSify exchanges metadata asynchronously via Apache Kafka. These contracts define the JSON structures used in the communication payload.
+
+### A. Tenant Created Event (`tenant.created`)
+Dispatched to notify downstream services that a new tenant has registered, enabling local pool configuration updates.
+```json
+{
+  "tenantId": "f7d2bc5c-b10b-4eb4-b903-f3612d1b88e1",
+  "name": "Acme Corp",
+  "subdomain": "acme",
+  "plan": "FREE",
+  "status": "ACTIVE",
+  "contactEmail": "admin@acme.com",
+  "createdAt": "2026-06-22T12:00:00.000Z"
+}
+```
+
+### B. Tenant Suspended Event (`tenant.suspended`)
+Dispatched when a tenant account is blocked, triggering immediate session invalidations in the authentication service.
+```json
+{
+  "tenantId": "f7d2bc5c-b10b-4eb4-b903-f3612d1b88e1",
+  "subdomain": "acme",
+  "status": "SUSPENDED",
+  "reason": "PAYMENT_OVERDUE",
+  "timestamp": "2026-06-22T12:15:30.000Z"
+}
+```
+
+### C. Tenant Plan Upgraded Event (`tenant.plan.upgraded`)
+Dispatched on plan upgrades, enabling instant quota cache updates at the API Gateway.
+```json
+{
+  "tenantId": "f7d2bc5c-b10b-4eb4-b903-f3612d1b88e1",
+  "subdomain": "acme",
+  "oldPlan": "FREE",
+  "newPlan": "PRO",
+  "timestamp": "2026-06-22T12:30:00.000Z"
+}
+```
+
+### D. API Usage Recorded Event (`usage.recorded`)
+Asynchronously logs request occurrences, incrementing daily consumption counters.
+```json
+{
+  "tenantId": "acme",
+  "route": "/api/users",
+  "method": "GET",
+  "timestamp": "2026-06-22T12:35:10.000Z"
+}
+```
+
+---
+
+## 4. Step-by-Step Scenario Traces
 
 ### Scenario A: Dynamic Onboarding Flow
 1. **Client Request**: A client registers with subdomain `"acme"` via `POST /api/tenants`.
@@ -165,7 +220,38 @@ Data is segregated into the **Administrative Master Catalog** (`saasify_master`)
 
 ---
 
-## 4. Critical Code Walkthroughs
+## 5. Visual Request Lifecycle Flowchart
+
+The execution path of an authenticated tenant API call:
+
+```
+[Client App]
+     │ (1) Request with Header / Token
+     ▼
+[api-gateway]
+     ├── (2) RateLimitFilter ────> [Redis Window Counter] (Checks limit)
+     ├── (3) QuotaCheckFilter ───> [Redis Daily Counter] (Checks quota)
+     ├── (4) JwtValidationFilter ─> Matches tenant claim in JWT
+     ▼
+[user-service]
+     ├── (5) TenantInterceptor ──> Sets context to ThreadLocal (TenantContext)
+     ├── (6) UserController ─────> Receives route request
+     ├── (7) UserService ────────> Executes query via multi-tenant datasource
+     │                                    │
+     │                                    ▼
+     │                      [MultiTenantRoutingDataSource]
+     │                                    │
+     │                         (determineCurrentLookupKey)
+     │                                    │
+     │                         (Returns active lookup ID)
+     │                                    │
+     ▼                                    ▼
+[MySQL Instance] <───────────────── [Uses Acme Pool]
+```
+
+---
+
+## 6. Critical Code Walkthroughs
 
 ### 1. Dynamic Routing DataSource
 In microservices like `user-service`, queries must route dynamically to the correct tenant database. This is managed by `MultiTenantRoutingDataSource`:
@@ -248,9 +334,19 @@ public class OutboxPublisherScheduler {
 }
 ```
 
+#### Outbox Event State Transition Lifecycle
+```
+[Created] -> processed=false
+                 │
+                 ▼
+          (Scheduler runs)
+                 ├─── Publish Success ──> processed=true [Archived]
+                 └─── Publish Failure ──> Transaction Rollback -> processed=false [Pending Retry]
+```
+
 ---
 
-## 5. Fault Tolerance & Fallback Matrix
+## 7. Fault Tolerance & Fallback Matrix
 
 SaaSify uses Resilience4j and Kafka retries to handle system failures:
 
@@ -261,9 +357,33 @@ SaaSify uses Resilience4j and Kafka retries to handle system failures:
 | **MySQL Master Offline** | `billing-service` processing usage events | **Exponential Retry Pipeline** | Kafka retries the event 4 times with progressive delays (`2s -> 4s -> 8s`). If still offline, it routes to `usage.recorded.DLQ`. |
 | **Redis Server Offline** | Gateway checking per-minute rate-limits | **Fail-Open Policy** | Rate limiting is bypassed, logging Redis warnings but allowing legitimate client traffic to proceed. |
 
+### Anatomy of the Trace Context Header
+Distributed tracing context is propagated across HTTP/Kafka borders under the W3C spec format:
+```
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+             │  └─────────────┬─────────────┘ └───────┬──────┘ └─┬┘
+             │                │                       │          └─ Flags (01 = Sampled)
+             │                │                       └─ Parent Span ID (64-bit hex)
+             │                └─ Trace ID (128-bit hex)
+             └─ Version (00)
+```
+
 ---
 
-## 6. Verification Runbook (Developer Cheat Sheet)
+## 8. Redis Key & TTL Reference Matrix
+
+Redis is used as the high-speed cache and data tracking framework:
+
+| Key Pattern | Data Type | TTL (Time-To-Live) | Target Service | Purpose |
+| :--- | :--- | :--- | :--- | :--- |
+| `ratelimit:{tenantId}:{yyyyMMddHHmm}` | `String` | 60 Seconds | `api-gateway` | Tracks requests inside the per-minute sliding window. |
+| `quota:{tenantId}:{date}` | `String` | 48 Hours | `api-gateway` / `billing-service` | Tracks total daily API calls for subscription usage limits. |
+| `refresh:{tenantId}:{token}` | `String` | 7 Days | `auth-service` | Stores refresh tokens for user authentication session management. |
+| `tenant:{tenantId}` | `String` (JSON) | 5 Minutes | `api-gateway` | Caches metadata lookup to avoid querying the MySQL master database. |
+
+---
+
+## 9. Verification Runbook (Developer Cheat Sheet)
 
 Developers can use the following commands to verify and test the platform's behaviors:
 
@@ -310,7 +430,7 @@ ab -n 20 -c 1 -H "X-Tenant-ID: acme" http://localhost:8080/api/users
 
 ---
 
-## 7. System Design Interview Q&A
+## 10. System Design Interview Q&A
 
 ### Q1: Can two users register with the same email address in SaaSify?
 **Yes**, because their constraints are bound to separate schemas. Email constraints are evaluated within a tenant's database schema (`tenant_acme.users` vs `tenant_globex.users`). User registration does not check for duplicate emails across different schemas.
@@ -334,7 +454,7 @@ try {
 
 ---
 
-## 8. Local Setup & Startup Sequence
+## 11. Local Setup & Startup Sequence
 
 ### Step 1: Spin Up Backing Infrastructure
 Run Docker Compose in the root folder to start MySQL, Redis, Kafka, and the observability stack:
@@ -356,3 +476,5 @@ Start the services in the following order:
 4. **auth-service** (Port `8082`)
 5. **user-service** (Port `8083`)
 6. **billing-service** (Port `8084`)
+
+***

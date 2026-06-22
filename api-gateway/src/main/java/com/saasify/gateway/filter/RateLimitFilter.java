@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
-import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.data.redis.core.ReactiveRedisOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -25,7 +25,7 @@ import java.time.format.DateTimeFormatter;
 public class RateLimitFilter implements GlobalFilter, Ordered {
 
     @Autowired
-    private ReactiveStringRedisTemplate redisTemplate;
+    private ReactiveRedisOperations<String, String> redisTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -94,6 +94,9 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         ServerHttpResponse response = exchange.getResponse();
         response.setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+
+        int secondsRemaining = 60 - java.time.LocalTime.now().getSecond();
+        response.getHeaders().add("Retry-After", String.valueOf(secondsRemaining));
 
         String body = String.format(
                 "{\"error\":\"Rate Limit Exceeded\",\"message\":\"Request limit exceeded for plan %s. Max allowed is %d requests per minute.\",\"limitPerMinute\":%d}",

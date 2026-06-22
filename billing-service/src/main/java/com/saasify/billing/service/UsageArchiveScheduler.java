@@ -3,7 +3,7 @@ package com.saasify.billing.service;
 import com.saasify.billing.entity.TenantUsageHistory;
 import com.saasify.billing.repository.UsageHistoryRepository;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import javax.sql.DataSource;
@@ -21,7 +21,7 @@ import java.util.UUID;
 public class UsageArchiveScheduler {
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private RedisOperations<String, String> redisTemplate;
 
     @Autowired
     private UsageHistoryRepository usageHistoryRepository;

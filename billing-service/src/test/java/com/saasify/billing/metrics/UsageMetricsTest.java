@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.ValueOperations;
 
 import javax.sql.DataSource;
@@ -25,7 +25,7 @@ public class UsageMetricsTest {
     private UsageMetrics usageMetrics;
 
     @Mock
-    private StringRedisTemplate redisTemplate;
+    private RedisOperations<String, String> redisTemplate;
 
     @Mock
     private ValueOperations<String, String> valueOperations;
@@ -83,5 +83,14 @@ public class UsageMetricsTest {
 
         assertEquals(50.0, acmeValue);
         assertEquals(250.0, globexValue);
+    }
+
+    @Test
+    public void testUpdateUsageGauges_DatabaseException() throws Exception {
+        when(masterDataSource.getConnection()).thenThrow(new java.sql.SQLException("Connection failed"));
+
+        usageMetrics.updateUsageGauges();
+
+        verifyNoInteractions(redisTemplate);
     }
 }

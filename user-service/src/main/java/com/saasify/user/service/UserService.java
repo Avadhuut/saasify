@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 import javax.sql.DataSource;
-import java.security.MessageDigest;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -39,6 +39,9 @@ public class UserService {
 
     @Autowired
     private DataSource masterDataSource;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     /**
      * Retrieves all users within the current tenant database context.
@@ -117,7 +120,7 @@ public class UserService {
         AppUser user = AppUser.builder()
                 .id(UUID.randomUUID().toString())
                 .email(request.getEmail())
-                .passwordHash(hashPassword(request.getPassword()))
+                .passwordHash(passwordEncoder.encode(request.getPassword()))
                 .role(request.getRole() != null ? request.getRole() : "MEMBER")
                 .isActive(true)
                 .build();
@@ -173,22 +176,4 @@ public class UserService {
         throw new IllegalArgumentException("No tenant registered for subdomain: " + subdomain);
     }
 
-    /**
-     * Hashes password using native SHA-256 MessageDigest.
-     */
-    private String hashPassword(String password) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(password.getBytes("UTF-8"));
-            StringBuilder hexString = new StringBuilder();
-            for (byte b : hash) {
-                String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) hexString.append('0');
-                hexString.append(hex);
-            }
-            return hexString.toString();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to hash password", e);
-        }
-    }
 }

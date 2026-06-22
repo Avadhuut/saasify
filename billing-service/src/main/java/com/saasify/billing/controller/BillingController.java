@@ -4,7 +4,7 @@ import com.saasify.billing.entity.TenantUsageHistory;
 import com.saasify.billing.repository.UsageHistoryRepository;
 import com.saasify.billing.service.UsageArchiveScheduler;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,7 +28,7 @@ import java.util.Map;
 public class BillingController {
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private RedisOperations<String, String> redisTemplate;
 
     @Autowired
     private UsageHistoryRepository usageHistoryRepository;

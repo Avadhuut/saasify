@@ -76,6 +76,17 @@ public class TenantService {
         // 5. Cache tenant metadata in Redis with a 5-minute Time-To-Live (TTL)
         cacheTenantMetadata(savedTenant);
 
+        // Transactional Outbox Pattern: Log creation event in database transaction
+        OutboxEvent outboxEvent = OutboxEvent.builder()
+                .id(UUID.randomUUID().toString())
+                .aggregateType("Tenant")
+                .aggregateId(savedTenant.getId())
+                .eventType("TENANT_CREATED")
+                .payload(savedTenant.getId())
+                .processed(false)
+                .build();
+        outboxRepository.save(outboxEvent);
+
         return savedTenant;
     }
 
@@ -107,6 +118,18 @@ public class TenantService {
         tenant.setPlan(plan);
         Tenant saved = tenantRepository.save(tenant);
         cacheTenantMetadata(saved);
+
+        // Transactional Outbox Pattern: Log plan upgrade event in database transaction
+        OutboxEvent outboxEvent = OutboxEvent.builder()
+                .id(UUID.randomUUID().toString())
+                .aggregateType("Tenant")
+                .aggregateId(id)
+                .eventType("TENANT_PLAN_UPGRADED")
+                .payload(id + ":" + plan)
+                .processed(false)
+                .build();
+        outboxRepository.save(outboxEvent);
+
         return saved;
     }
 

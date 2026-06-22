@@ -115,7 +115,7 @@ jobs:
 
       - name: Boot Docker Compose Stack
         run: |
-          docker compose up -d --wait
+          docker compose -f docker-compose-e2e.yml up -d --wait
           # Wait a few seconds for services to fully initialize on port 8080 and discover each other
           sleep 15
 
@@ -138,4 +138,4 @@ jobs:
 
       - name: Teardown Compose Stack
         if: always()
-        run: docker compose down -v
+        run: docker compose -f docker-compose-e2e.yml down -v

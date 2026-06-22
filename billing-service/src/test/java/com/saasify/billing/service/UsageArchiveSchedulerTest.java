@@ -7,7 +7,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.ValueOperations;
 
 import javax.sql.DataSource;
@@ -26,7 +26,7 @@ public class UsageArchiveSchedulerTest {
     private UsageArchiveScheduler usageArchiveScheduler;
 
     @Mock
-    private StringRedisTemplate redisTemplate;
+    private RedisOperations<String, String> redisTemplate;
 
     @Mock
     private ValueOperations<String, String> valueOperations;
@@ -72,5 +72,14 @@ public class UsageArchiveSchedulerTest {
         // Verify save and delete commands were dispatched
         verify(usageHistoryRepository, times(2)).save(any(TenantUsageHistory.class));
         verify(redisTemplate, times(2)).delete(anyString());
+    }
+
+    @Test
+    public void testArchiveYesterdayUsage_DatabaseException() throws Exception {
+        when(masterDataSource.getConnection()).thenThrow(new java.sql.SQLException("Connection failed"));
+
+        usageArchiveScheduler.archiveYesterdayUsage();
+
+        verifyNoInteractions(usageHistoryRepository, redisTemplate);
     }
 }

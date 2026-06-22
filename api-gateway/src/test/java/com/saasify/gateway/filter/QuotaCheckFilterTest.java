@@ -6,7 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.data.redis.core.ReactiveRedisOperations;
 import org.springframework.data.redis.core.ReactiveValueOperations;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -30,7 +30,7 @@ public class QuotaCheckFilterTest {
     private QuotaCheckFilter quotaCheckFilter;
 
     @Mock
-    private ReactiveStringRedisTemplate redisTemplate;
+    private ReactiveRedisOperations<String, String> redisTemplate;
 
     @Mock
     private ReactiveValueOperations<String, String> valueOperations;
@@ -47,8 +47,7 @@ public class QuotaCheckFilterTest {
     @Mock
     private ServerHttpResponse response;
 
-    @Mock
-    private HttpHeaders httpHeaders;
+    private final HttpHeaders httpHeaders = new HttpHeaders();
 
     @BeforeEach
     public void setUp() {
@@ -58,7 +57,7 @@ public class QuotaCheckFilterTest {
 
     @Test
     public void testFilter_WithoutTenantId_BypassesFilter() {
-        when(httpHeaders.getFirst("X-Tenant-ID")).thenReturn(null);
+        httpHeaders.clear();
         when(chain.filter(exchange)).thenReturn(Mono.empty());
 
         Mono<Void> result = quotaCheckFilter.filter(exchange, chain);
@@ -77,7 +76,7 @@ public class QuotaCheckFilterTest {
         String planCacheKey = "tenant:" + tenantId;
         String usageKey = "usage:" + tenantId + ":" + today;
 
-        when(httpHeaders.getFirst("X-Tenant-ID")).thenReturn(tenantId);
+        httpHeaders.set("X-Tenant-ID", tenantId);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(planCacheKey)).thenReturn(Mono.just("{\"plan\":\"FREE\"}"));
         when(valueOperations.get(usageKey)).thenReturn(Mono.just("50"));
@@ -98,7 +97,7 @@ public class QuotaCheckFilterTest {
         String planCacheKey = "tenant:" + tenantId;
         String usageKey = "usage:" + tenantId + ":" + today;
 
-        when(httpHeaders.getFirst("X-Tenant-ID")).thenReturn(tenantId);
+        httpHeaders.set("X-Tenant-ID", tenantId);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(planCacheKey)).thenReturn(Mono.just("{\"plan\":\"FREE\"}"));
         when(valueOperations.get(usageKey)).thenReturn(Mono.just("100")); // Limit for FREE is 100

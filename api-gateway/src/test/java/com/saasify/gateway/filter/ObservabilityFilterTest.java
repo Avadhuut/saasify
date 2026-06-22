@@ -44,8 +44,7 @@ public class ObservabilityFilterTest {
     @Mock
     private ServerHttpResponse response;
 
-    @Mock
-    private HttpHeaders httpHeaders;
+    private final HttpHeaders httpHeaders = new HttpHeaders();
 
     @Mock
     private ServerWebExchange.Builder exchangeBuilder;
@@ -69,9 +68,9 @@ public class ObservabilityFilterTest {
 
     @Test
     public void testFilter_PropagatesContextAndTriggersMetrics() {
-        when(httpHeaders.getFirst("X-Tenant-ID")).thenReturn("acme");
-        when(httpHeaders.getFirst("X-Correlation-ID")).thenReturn("correlation-123");
-        when(httpHeaders.getFirst("X-User-ID")).thenReturn("user-456");
+        httpHeaders.set("X-Tenant-ID", "acme");
+        httpHeaders.set("X-Correlation-ID", "correlation-123");
+        httpHeaders.set("X-User-ID", "user-456");
         when(chain.filter(any(ServerWebExchange.class))).thenReturn(Mono.empty());
 
         Mono<Void> result = observabilityFilter.filter(exchange, chain);
@@ -91,9 +90,7 @@ public class ObservabilityFilterTest {
 
     @Test
     public void testFilter_DefaultValuesIfMissing() {
-        when(httpHeaders.getFirst("X-Tenant-ID")).thenReturn(null);
-        when(httpHeaders.getFirst("X-Correlation-ID")).thenReturn(null);
-        when(httpHeaders.getFirst("X-User-ID")).thenReturn(null);
+        httpHeaders.clear();
         when(chain.filter(any(ServerWebExchange.class))).thenReturn(Mono.empty());
 
         Mono<Void> result = observabilityFilter.filter(exchange, chain);
@@ -104,5 +101,34 @@ public class ObservabilityFilterTest {
         verify(requestBuilder).header(eq("X-Tenant-ID"), eq("SYSTEM"));
         verify(requestBuilder).header(eq("X-Correlation-ID"), anyString()); // Generates UUID
         verify(requestBuilder).header(eq("X-User-ID"), eq("ANONYMOUS"));
+    }
+
+    @Test
+    public void testFilter_OnChainError_RecordsMetrics() {
+        httpHeaders.set("X-Tenant-ID", "acme");
+        when(chain.filter(any(ServerWebExchange.class))).thenReturn(Mono.error(new RuntimeException("Test error")));
+
+        Mono<Void> result = observabilityFilter.filter(exchange, chain);
+
+        StepVerifier.create(result)
+                .expectError(RuntimeException.class)
+                .verify();
+
+        verify(tenantMetrics, times(1)).incrementRequestCount(eq("acme"), eq("/"), eq("500"));
+        verify(tenantMetrics, times(1)).recordLatency(eq("acme"), eq("/"), anyDouble());
+    }
+
+    @Test
+    public void testFilter_ResolvesTenantFromHostHeader() {
+        httpHeaders.clear();
+        httpHeaders.set("Host", "acme.saasify.com");
+        when(chain.filter(any(ServerWebExchange.class))).thenReturn(Mono.empty());
+
+        Mono<Void> result = observabilityFilter.filter(exchange, chain);
+
+        StepVerifier.create(result)
+                .verifyComplete();
+
+        verify(requestBuilder).header(eq("X-Tenant-ID"), eq("acme"));
     }
 }

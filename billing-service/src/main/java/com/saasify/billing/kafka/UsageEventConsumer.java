@@ -1,7 +1,7 @@
 package com.saasify.billing.kafka;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.kafka.annotation.DltHandler;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
@@ -27,7 +27,7 @@ import java.time.LocalDate;
 public class UsageEventConsumer {
 
     @Autowired
-    private StringRedisTemplate redisTemplate;
+    private RedisOperations<String, String> redisTemplate;
 
     @Autowired
     private KafkaTemplate<String, String> kafkaTemplate;

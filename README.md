@@ -42,7 +42,7 @@ graph TD
 2. **Elastic Tenant Provisioning**: Onboarding a new tenant automatically runs DDL migration scripts (via Flyway) to generate a isolated database schema instantly without server restart.
 3. **Decoupled Asynchronous Telemetry**: API Gateways track user request counts and dispatch them to Apache Kafka. The Billing Service consumes these events asynchronously, maintaining high throughput.
 4. **Gateway-Level JWT Guardrails**: Centralized security filters validate tokens and block cross-tenant hijacking attempts.
-5. **Gateway-Level Auto-Suspension**: Instantly blocks API access for `SUSPENDED` tenants returning `402 Payment Required`, with dynamic cache-refill fallbacks.
+5. **Gateway-Level Auto-Suspension**: Instantly blocks API access for `SUSPENDED` tenants returning `403 Forbidden`, with dynamic cache-refill fallbacks.
 6. **Telemetry Resiliency (Kafka DLQ & Retry)**: Consumed telemetry events are automatically retried 4 times with exponential backoff, routing persistent failures to a Dead Letter Queue (DLQ) for monitoring.
 7. **Fault-Tolerant Inter-Service Communication (Resilience4j)**: OpenFeign clients are protected with **Resilience4j Circuit Breaker & Retry** policies with graceful fallbacks (e.g., fallback plan thresholds) to prevent cascading failures if critical services go offline.
 8. **Distributed Context Correlation (MDC Logging)**: Propagates correlation, tenant, and user IDs across thread pools and network hops using custom servlet and reactive filters to ensure uniform, end-to-end log correlation.
@@ -111,7 +111,7 @@ The services will spin up in the following order:
 
 ## 🧪 Postman Testing Walkthrough
 
-Import the collection found inside `postman/Saasify Platform API E2E.postman_collection.json` into Postman.
+Import the collection found inside `postman/saasify.postman_collection.json` into Postman.
 
 ### Step 1: Onboard a New Tenant
 * **Endpoint**: `POST http://localhost:8080/api/tenants`
@@ -175,10 +175,10 @@ Make multiple API calls as the user, then query metrics:
      `PUT http://localhost:8080/api/tenants/<tenant-uuid>/status?status=SUSPENDED`
 2. **Verify API Block**:
    * Try calling `GET http://localhost:8080/api/users` again with headers.
-   * **Expected Response**: The API Gateway immediately blocks the request with `402 Payment Required` and payload:
+   * **Expected Response**: The API Gateway immediately blocks the request with `403 Forbidden` and payload:
      ```json
      {
-       "error": "Payment Required",
+       "error": "Forbidden",
        "message": "Tenant account is suspended. Please resolve billing issues or upgrade plan."
      }
      ```
@@ -290,7 +290,7 @@ The project includes a fully automated CI/CD pipeline configured with **GitHub A
 4. **E2E Blackbox Integration Testing**:
    - Boots up the docker-compose services stack within the runner:
      ```bash
-     docker compose up -d --wait
+     docker compose -f docker-compose-e2e.yml up -d --wait
      ```
    - Automatically installs Postman's Newman CLI tool.
    - Executes the end-to-end integration tests using Newman against the API Gateway (`saasify.postman_collection.json`).

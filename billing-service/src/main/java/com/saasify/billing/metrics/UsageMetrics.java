@@ -3,7 +3,7 @@ package com.saasify.billing.metrics;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.MultiGauge;
 import io.micrometer.core.instrument.Tags;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -22,11 +22,11 @@ import java.util.List;
 @Component
 public class UsageMetrics {
 
-    private final StringRedisTemplate redisTemplate;
+    private final RedisOperations<String, String> redisTemplate;
     private final DataSource masterDataSource;
     private final MultiGauge usageGauge;
 
-    public UsageMetrics(StringRedisTemplate redisTemplate, DataSource masterDataSource, MeterRegistry meterRegistry) {
+    public UsageMetrics(RedisOperations<String, String> redisTemplate, DataSource masterDataSource, MeterRegistry meterRegistry) {
         this.redisTemplate = redisTemplate;
         this.masterDataSource = masterDataSource;
         this.usageGauge = MultiGauge.builder("saasify_api_usage_current")

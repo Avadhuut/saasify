@@ -6,7 +6,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.data.redis.core.ReactiveRedisOperations;
 import org.springframework.data.redis.core.ReactiveValueOperations;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -30,7 +30,7 @@ public class RateLimitFilterTest {
     private RateLimitFilter rateLimitFilter;
 
     @Mock
-    private ReactiveStringRedisTemplate redisTemplate;
+    private ReactiveRedisOperations<String, String> redisTemplate;
 
     @Mock
     private ReactiveValueOperations<String, String> valueOperations;
@@ -47,8 +47,7 @@ public class RateLimitFilterTest {
     @Mock
     private ServerHttpResponse response;
 
-    @Mock
-    private HttpHeaders httpHeaders;
+    private final HttpHeaders httpHeaders = new HttpHeaders();
 
     @BeforeEach
     public void setUp() {
@@ -58,7 +57,7 @@ public class RateLimitFilterTest {
 
     @Test
     public void testFilter_WithoutTenantId_BypassesFilter() {
-        when(httpHeaders.getFirst("X-Tenant-ID")).thenReturn(null);
+        httpHeaders.clear();
         when(chain.filter(exchange)).thenReturn(Mono.empty());
 
         Mono<Void> result = rateLimitFilter.filter(exchange, chain);
@@ -75,7 +74,7 @@ public class RateLimitFilterTest {
         String tenantId = "acme";
         String planCacheKey = "tenant:" + tenantId;
 
-        when(httpHeaders.getFirst("X-Tenant-ID")).thenReturn(tenantId);
+        httpHeaders.set("X-Tenant-ID", tenantId);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(planCacheKey)).thenReturn(Mono.just("{\"plan\":\"FREE\"}"));
         when(valueOperations.increment(anyString())).thenReturn(Mono.just(5L)); // 5 requests is under limit of 10
@@ -94,7 +93,7 @@ public class RateLimitFilterTest {
         String tenantId = "acme";
         String planCacheKey = "tenant:" + tenantId;
 
-        when(httpHeaders.getFirst("X-Tenant-ID")).thenReturn(tenantId);
+        httpHeaders.set("X-Tenant-ID", tenantId);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(planCacheKey)).thenReturn(Mono.just("{\"plan\":\"FREE\"}"));
         when(valueOperations.increment(anyString())).thenReturn(Mono.just(1L)); // 1st request
@@ -115,7 +114,7 @@ public class RateLimitFilterTest {
         String tenantId = "acme";
         String planCacheKey = "tenant:" + tenantId;
 
-        when(httpHeaders.getFirst("X-Tenant-ID")).thenReturn(tenantId);
+        httpHeaders.set("X-Tenant-ID", tenantId);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(planCacheKey)).thenReturn(Mono.just("{\"plan\":\"FREE\"}"));
         when(valueOperations.increment(anyString())).thenReturn(Mono.just(11L)); // 11 requests exceeds limit of 10

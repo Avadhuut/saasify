@@ -5,7 +5,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.RedisOperations;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.kafka.core.KafkaTemplate;
 
@@ -26,7 +26,7 @@ public class UsageEventConsumerTest {
     private UsageEventConsumer usageEventConsumer;
 
     @Mock
-    private StringRedisTemplate redisTemplate;
+    private RedisOperations<String, String> redisTemplate;
 
     @Mock
     private ValueOperations<String, String> valueOperations;
@@ -110,5 +110,19 @@ public class UsageEventConsumerTest {
 
         verify(valueOperations, times(1)).increment(startsWith("usage:acme:"));
         verify(kafkaTemplate, times(1)).send(eq("quota.exceeded"), eq(tenantId));
+    }
+
+    @Test
+    public void testConsumeUsageEvent_DatabaseException_ThrowsRuntimeException() throws Exception {
+        String tenantId = "acme";
+        
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.increment(anyString())).thenReturn(50L);
+        
+        when(masterDataSource.getConnection()).thenThrow(new java.sql.SQLException("Connection failed"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class, () -> {
+            usageEventConsumer.consumeUsageEvent(tenantId);
+        });
     }
 }

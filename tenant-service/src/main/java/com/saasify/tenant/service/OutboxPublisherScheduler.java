@@ -68,6 +68,10 @@ public class OutboxPublisherScheduler {
     private String resolveTopic(String eventType) {
         if ("TENANT_SUSPENDED".equalsIgnoreCase(eventType)) {
             return "tenant.suspended";
+        } else if ("TENANT_CREATED".equalsIgnoreCase(eventType)) {
+            return "tenant.created";
+        } else if ("TENANT_PLAN_UPGRADED".equalsIgnoreCase(eventType)) {
+            return "tenant.plan.upgraded";
         }
         return null;
     }

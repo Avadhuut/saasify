@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
-import org.springframework.data.redis.core.ReactiveStringRedisTemplate;
+import org.springframework.data.redis.core.ReactiveRedisOperations;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -23,7 +23,7 @@ import java.time.LocalDate;
 public class QuotaCheckFilter implements GlobalFilter, Ordered {
 
     @Autowired
-    private ReactiveStringRedisTemplate redisTemplate;
+    private ReactiveRedisOperations<String, String> redisTemplate;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -61,7 +61,12 @@ public class QuotaCheckFilter implements GlobalFilter, Ordered {
                                 return Mono.empty();
                             });
                 }))
+                .defaultIfEmpty("BYPASS")
                 .flatMap(tenantJson -> {
+                    if ("BYPASS".equals(tenantJson)) {
+                        return chain.filter(exchange);
+                    }
+
                     String status = extractStatus(tenantJson);
                     if ("SUSPENDED".equalsIgnoreCase(status)) {
                         return respondWithSuspended(exchange);
@@ -83,8 +88,7 @@ public class QuotaCheckFilter implements GlobalFilter, Ordered {
                                 }
                                 return chain.filter(exchange);
                             });
-                })
-                .switchIfEmpty(chain.filter(exchange)); // Fallback: allow request if cache missing and fetch failed
+                }); // Fallback: allow request if cache missing and fetch failed
     }
 
     private String extractPlan(String json) {
@@ -116,10 +120,10 @@ public class QuotaCheckFilter implements GlobalFilter, Ordered {
 
     private Mono<Void> respondWithSuspended(ServerWebExchange exchange) {
         ServerHttpResponse response = exchange.getResponse();
-        response.setStatusCode(HttpStatus.PAYMENT_REQUIRED);
+        response.setStatusCode(HttpStatus.FORBIDDEN);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
 
-        String body = "{\"error\":\"Payment Required\",\"message\":\"Tenant account is suspended. Please resolve billing issues or upgrade plan.\"}";
+        String body = "{\"error\":\"Forbidden\",\"message\":\"Tenant account is suspended. Please resolve billing issues or upgrade plan.\"}";
 
         return response.writeWith(Mono.just(response.bufferFactory().wrap(body.getBytes())));
     }
@@ -129,9 +133,15 @@ public class QuotaCheckFilter implements GlobalFilter, Ordered {
         response.setStatusCode(HttpStatus.TOO_MANY_REQUESTS);
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
 
+        String resetAt = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC)
+                .toLocalDate()
+                .plusDays(1)
+                .atStartOfDay(java.time.ZoneOffset.UTC)
+                .format(java.time.format.DateTimeFormatter.ISO_INSTANT);
+
         String body = String.format(
-                "{\"error\":\"Quota Exceeded\",\"message\":\"Daily API call limit reached for plan %s.\",\"currentUsage\":%d,\"maxLimit\":%d,\"planType\":\"%s\",\"upgradeUrl\":\"https://saasify.com/upgrade\"}",
-                plan, current, max, plan
+                "{\"error\":\"Quota Exceeded\",\"message\":\"Daily API call limit reached for plan %s.\",\"currentUsage\":%d,\"maxLimit\":%d,\"planType\":\"%s\",\"upgradeUrl\":\"https://saasify.com/upgrade\",\"resetAt\":\"%s\"}",
+                plan, current, max, plan, resetAt
         );
 
         return response.writeWith(Mono.just(response.bufferFactory().wrap(body.getBytes())));
